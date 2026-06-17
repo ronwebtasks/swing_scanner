@@ -1,42 +1,61 @@
+# app.py
 import streamlit as st
-import datetime
+import pandas as pd
+from symbols import LARGE_CAP_STOCKS, MID_CAP_STOCKS
 from data_engine import fetch_indian_stock_data
+from indicators import scan_stock
 
-# Set wide layout so charts look expansive and professional
-st.set_page_config(page_title="Indian Market Swing & Footprint Scanner", layout="wide")
+st.set_page_config(page_title="NSE Swing & Footprint Scanner", layout="wide")
 
-st.title("🇮🇳 Indian Stock Market Swing Scanner")
-st.caption("High-Accuracy 5-8 Day Momentum Pullbacks & Institutional FII/DII Footprint Trackers")
+st.title("🇮🇳 Indian Market Swing & Footprint Scanner")
+st.caption("Automated Multi-Cap Scanning for 5-8 Day Holds")
 
-# --- SIDEBAR CONTROL PANEL ---
-st.sidebar.header("Configuration Panel")
+# --- Control Panel ---
+segment = st.sidebar.radio("Select Market Segment:", ["Large-Cap (Nifty 100)", "Mid-Cap (Nifty 150)", "All Combined"])
+run_scan = st.sidebar.button("Execute Live Market Scan", type="primary")
 
-# Default high-liquidity stock input for initial testing
-ticker_input = st.sidebar.text_input("Enter NSE Ticker Symbol:", value="RELIANCE")
-lookback_period = st.sidebar.selectbox("Select Historical Data Depth:", options=["6m", "1y", "2y"], index=1)
+# Assemble stock list based on selection
+if segment == "Large-Cap (Nifty 100)":
+    tickers = LARGE_CAP_STOCKS
+elif segment == "Mid-Cap (Nifty 150)":
+    tickers = MID_CAP_STOCKS
+else:
+    tickers = LARGE_CAP_STOCKS + MID_CAP_STOCKS
 
-st.sidebar.divider()
-st.sidebar.info("Next steps will integrate automated scans across the entire Nifty 200 universe.")
-
-# --- MAIN APP INTERFACE ---
-if ticker_input:
-    with st.spinner(f"Fetching market data for {ticker_input.upper()}..."):
-        # Trigger data pipeline
-        stock_df = fetch_indian_stock_data(ticker_input, period=lookback_period)
+if run_scan:
+    results = []
+    progress_bar = st.progress(0)
+    
+    for idx, sym in enumerate(tickers):
+        progress_bar.progress((idx + 1) / len(tickers))
+        df = fetch_indian_stock_data(sym, period="1y")
         
-    if not stock_df.empty:
-        st.success(f"Successfully loaded {len(stock_df)} trading sessions for {ticker_input.upper()}.")
+        if not df.empty:
+            scan_res = scan_stock(df)
+            if scan_res:
+                status, info = scan_res
+                if status != "NEUTRAL":
+                    results.append({
+                        "Ticker": sym,
+                        "Current Price": f"₹{df.iloc[-1]['Close']:.2f}",
+                        "Scanner Alert": status,
+                        "FII/DII Zone Support": info["Footprint_Zone"],
+                        "ATR (Volatility)": info["ATR"]
+                    })
+                    
+    progress_bar.empty()
+    
+    if results:
+        st.subheader("📊 Found Actionable Structural Opportunities")
+        res_df = pd.DataFrame(results)
         
-        # Display summary cards of the most recent trading session
-        latest_row = stock_df.iloc[-1]
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Last Close Price", f"₹{latest_row['Close']:.2f}")
-        col2.metric("Day High", f"₹{latest_row['High']:.2f}")
-        col3.metric("Day Low", f"₹{latest_row['Low']:.2f}")
-        col4.metric("Volume Traded", f"{int(latest_row['Volume']):,}")
-        
-        # Preview raw dataframe structure
-        st.subheader("Historical Data Preview")
-        st.dataframe(stock_df.tail(10), use_container_width=True)
+        # Color coding highlighter for different setup triggers
+        def style_alerts(val):
+            color = '#1E3A8A' if val == 'SWING_BUY_ALERT' else '#065F46'
+            return f'background-color: {color}; color: white; font-weight: bold;'
+            
+        st.dataframe(res_df.style.map(style_alerts, subset=['Scanner Alert']), use_container_width=True)
     else:
-        st.error("No stock data found. Please verify the symbol name (e.g., RELIANCE, TCS, HDFCBANK).")
+        st.info("Scan complete. No stocks are currently entering consolidation retests or deep short-term pullbacks.")
+else:
+    st.info("Click **'Execute Live Market Scan'** in the sidebar panel to check momentum pullbacks across segments.")
