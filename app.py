@@ -44,8 +44,24 @@ if run_scan:
             if scan_res and scan_res != "NEUTRAL":
                 _, metrics = scan_res
                 
-                metrics["Raw_Highs"] = [float(df[df['Date'] == pd.to_datetime(d).date()]['High'].iloc) if not df[df['Date'] == pd.to_datetime(d).date()].empty else metrics["Floor"] for d in metrics["Raw_Dates"]]
-                metrics["Raw_Lows"] = [float(df[df['Date'] == pd.to_datetime(d).date()]['Low'].iloc) if not df[df['Date'] == pd.to_datetime(d).date()].empty else metrics["Floor"] for d in metrics["Raw_Dates"]]
+                # Bulletproof High/Low Extraction loop to prevent KeyErrors
+                extracted_highs = []
+                extracted_lows = []
+                
+                for date_str in metrics["Raw_Dates"]:
+                    # Convert to datetime date object to match data engine output
+                    target_date = pd.to_datetime(date_str, format='%d-%m-%Y').date()
+                    matching_rows = df[df['Date'] == target_date]
+                    
+                    if not matching_rows.empty:
+                        extracted_highs.append(float(matching_rows['High'].iloc[0]))
+                        extracted_lows.append(float(matching_rows['Low'].iloc[0]))
+                    else:
+                        extracted_highs.append(float(metrics["Floor"]))
+                        extracted_lows.append(float(metrics["Floor"]))
+                
+                metrics["Raw_Highs"] = extracted_highs
+                metrics["Raw_Lows"] = extracted_lows
                 
                 fresh_portfolio[sym] = metrics
                 
@@ -81,7 +97,6 @@ if st.session_state.active_portfolio:
                 "Live Price": live_price,
                 "Execution State": current_alert,
                 "Optimal Buy Zone": f"₹{floor:.2f} - ₹{ceiling:.2f}",
-                # UPGRADED: Explicitly labels High and Low parameters directly in the string format
                 "FII/DII Buying Price": f"₹{stored_data['Block_Low']:.0f} (Low) - ₹{stored_data['Block_High']:.0f} (High)",
                 "Profit Target": float(stored_data["Target"]),
                 "Stop Loss (SL)": float(stored_data["SL"]),
@@ -126,7 +141,7 @@ if st.session_state.active_portfolio:
                     st.caption(f"📅 {d_val}")
                     st.markdown(f"**H:** ₹{highs[i]:.0f}\n\n**L:** ₹{lows[i]:.0f}")
 
-    # --- CLEAN CHART RENDER PASSTHRU ---
+    # --- CLEAN CHART RENDER ---
     st.divider()
     chart_df = fetch_indian_stock_data(selected_ticker, period="1y")
     if not chart_df.empty:
