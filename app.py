@@ -44,12 +44,12 @@ if run_scan:
             if scan_res and scan_res != "NEUTRAL":
                 _, metrics = scan_res
                 
-                # Bulletproof High/Low Extraction loop to prevent KeyErrors
+                # Extract and parse historical boundaries safely using string loops
                 extracted_highs = []
                 extracted_lows = []
+                dates_to_process = metrics.get("Raw_Dates", [])
                 
-                for date_str in metrics["Raw_Dates"]:
-                    # Convert to datetime date object to match data engine output
+                for date_str in dates_to_process:
                     target_date = pd.to_datetime(date_str, format='%d-%m-%Y').date()
                     matching_rows = df[df['Date'] == target_date]
                     
@@ -57,8 +57,8 @@ if run_scan:
                         extracted_highs.append(float(matching_rows['High'].iloc[0]))
                         extracted_lows.append(float(matching_rows['Low'].iloc[0]))
                     else:
-                        extracted_highs.append(float(metrics["Floor"]))
-                        extracted_lows.append(float(metrics["Floor"]))
+                        extracted_highs.append(float(metrics.get("Floor", 0)))
+                        extracted_lows.append(float(metrics.get("Floor", 0)))
                 
                 metrics["Raw_Highs"] = extracted_highs
                 metrics["Raw_Lows"] = extracted_lows
@@ -80,27 +80,32 @@ if st.session_state.active_portfolio:
         live_df = fetch_indian_stock_data(sym, period="5d")
         if not live_df.empty:
             live_price = float(live_df.iloc[-1]['Close'])
-            floor = stored_data["Floor"]
-            ceiling = stored_data["Ceiling"]
+            floor = stored_data.get("Floor", 0)
+            ceiling = stored_data.get("Ceiling", 0)
+            sl_level = stored_data.get("SL", 0)
             
-            if live_price < stored_data["SL"]:
+            if live_price < sl_level:
                 current_alert = "❌ INVALID_PASSED"
             elif floor <= live_price <= ceiling:
                 current_alert = "🔥 ENTER_ZONE"
             elif live_price > ceiling:
                 current_alert = "⏳ AWAIT_PULLBACK"
             else:
-                current_alert = stored_data["Base_Status"]
+                current_alert = stored_data.get("Base_Status", "NEUTRAL")
                 
+            block_low = stored_data.get("Block_Low", floor)
+            block_high = stored_data.get("Block_High", ceiling)
+            
             compiled_rows.append({
                 "Ticker": sym,
                 "Live Price": live_price,
                 "Execution State": current_alert,
                 "Optimal Buy Zone": f"₹{floor:.2f} - ₹{ceiling:.2f}",
-                "FII/DII Buying Price": f"₹{stored_data['Block_Low']:.0f} (Low) - ₹{stored_data['Block_High']:.0f} (High)",
-                "Profit Target": float(stored_data["Target"]),
-                "Stop Loss (SL)": float(stored_data["SL"]),
-                "ATR Level": float(stored_data["ATR"])
+                # Strictly formats the precise required low/high identifier labels inside the row string
+                "FII/DII Buying Price": f"₹{block_low:.0f} (Low) - ₹{block_high:.0f} (High)",
+                "Profit Target": float(stored_data.get("Target", 0)),
+                "Stop Loss (SL)": float(sl_level),
+                "ATR Level": float(stored_data.get("ATR", 0))
             })
             
     res_df = pd.DataFrame(compiled_rows)
@@ -129,17 +134,19 @@ if st.session_state.active_portfolio:
         
         if selected_ticker in st.session_state.active_portfolio:
             target_data = st.session_state.active_portfolio[selected_ticker]
-            dates = target_data["Raw_Dates"]
-            highs = target_data.get("Raw_Highs", [target_data["Floor"]]*4)
-            lows = target_data.get("Raw_Lows", [target_data["Floor"]]*4)
+            dates = target_data.get("Raw_Dates", [])
+            floor_fallback = target_data.get("Floor", 0)
+            highs = target_data.get("Raw_Highs", [floor_fallback]*4)
+            lows = target_data.get("Raw_Lows", [floor_fallback]*4)
             
             st.markdown("**FII/DII Historical Limits [High / Low]:**")
             sub_cols = st.columns(3)
             for i, d_val in enumerate(dates[:3]):
-                with sub_cols[i]:
-                    st.error(f"🧱 **B{i+1}**")
-                    st.caption(f"📅 {d_val}")
-                    st.markdown(f"**H:** ₹{highs[i]:.0f}\n\n**L:** ₹{lows[i]:.0f}")
+                if i < len(highs) and i < len(lows):
+                    with sub_cols[i]:
+                        st.error(f"🧱 **B{i+1}**")
+                        st.caption(f"📅 {d_val}")
+                        st.markdown(f"**H:** ₹{highs[i]:.0f}\n\n**L:** ₹{lows[i]:.0f}")
 
     # --- CLEAN CHART RENDER ---
     st.divider()
@@ -151,9 +158,9 @@ if st.session_state.active_portfolio:
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=plot_df['Date'], open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Price"))
         
-        fig.add_hline(y=target_meta["Floor"], line_dash="dash", line_color="#065F46", line_width=2, annotation_text="Buy Zone Floor")
-        fig.add_hline(y=target_meta["Target"], line_dash="dot", line_color="#1E3A8A", line_width=2, annotation_text="Target")
-        fig.add_hline(y=target_meta["SL"], line_dash="solid", line_color="#991B1B", line_width=2, annotation_text="Hard SL")
+        fig.add_hline(y=target_meta.get("Floor", 0), line_dash="dash", line_color="#065F46", line_width=2, annotation_text="Buy Zone Floor")
+        fig.add_hline(y=target_meta.get("Target", 0), line_dash="dot", line_color="#1E3A8A", line_width=2, annotation_text="Target")
+        fig.add_hline(y=target_meta.get("SL", 0), line_dash="solid", line_color="#991B1B", line_width=2, annotation_text="Hard SL")
         
         fig.update_layout(
             title=f"{selected_ticker} Live Structural Workspace", 
