@@ -6,7 +6,7 @@ import numpy as np
 def scan_stock(df):
     """
     STRICT CAP-PROTECTED SWING ENGINE.
-    Establishes hard operational boundaries for larger capital allocations.
+    Extracts multi-date historical FII/DII price coordinates for exact UI tracking.
     """
     if len(df) < 60:
         return None
@@ -37,16 +37,22 @@ def scan_stock(df):
         return None
         
     recent_footprints = footprint_rows.tail(4)
-    raw_dates = [pd.to_datetime(d).strftime('%d-%m-%Y') for d in recent_footprints['Date']]
-    raw_dates.reverse()
+    
+    # NEW: Store pairs of {"date": "DD-MM-YYYY", "price": float}
+    historical_blocks = []
+    for _, row in recent_footprints.iterrows():
+        formatted_date = pd.to_datetime(row['Date']).strftime('%d-%m-%Y')
+        calculated_cost = (row['High'] + row['Low']) / 2
+        historical_blocks.append({
+            "date": formatted_date,
+            "price": round(calculated_cost, 2)
+        })
+    historical_blocks.reverse() # Show most recent block first
     
     last_footprint_row = recent_footprints.iloc[-1]
     zone_floor = (last_footprint_row['High'] + last_footprint_row['Low']) / 2
-    
-    # Establish a mathematically tight Buy Range (Floor to Floor + 0.5% premium max)
     zone_ceiling = zone_floor * 1.005
     
-    # Structural validity window: allows scanning even if price is currently out of bounds
     status = "NEUTRAL"
     if current_close >= (zone_floor * 0.96) and current_close <= (zone_floor * 1.05):
         status = "INSTITUTIONAL_RETEST"
@@ -57,7 +63,7 @@ def scan_stock(df):
         "ATR": round(atr, 2),
         "Floor": round(zone_floor, 2),
         "Ceiling": round(zone_ceiling, 2),
-        "Raw_Dates": raw_dates,
+        "Blocks_Data": historical_blocks, # Upgraded tracking array
         "Target": round(current_close + (2.5 * atr), 2),
         "SL": round(zone_floor * 0.97, 2),
         "Base_Status": status
