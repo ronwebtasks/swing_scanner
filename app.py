@@ -1,6 +1,7 @@
 # app.py
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from symbols import NIFTY_50, NIFTY_NEXT_50, MIDCAP_150
 from data_engine import fetch_indian_stock_data
 from indicators import scan_stock
@@ -27,10 +28,9 @@ elif segment == "Nifty Midcap 150":
 else:
     tickers = NIFTY_50 + NIFTY_NEXT_50 + MIDCAP_150
 
-# Track data size for transparency
 total_scanned_count = len(tickers)
 
-# Persist search across frames using streamlit state cache
+# Persist search across frames using streamlit session state cache
 if "scan_results" not in st.session_state:
     st.session_state.scan_results = []
 if "date_lookup" not in st.session_state:
@@ -68,12 +68,11 @@ if run_scan:
     st.session_state.date_lookup = lookup
     st.session_state.last_scanned_volume = total_scanned_count
 
-# --- MAIN RENDER DISPLAY ---
+# --- MAIN RENDER DISPLAY PANEL ---
 if st.session_state.scan_results:
-    # Transparency Indicator Card
-    st.success(f"স্ক্যান সফল! এই ক্যাটাগরির মোট {st.session_state.last_scanned_volume} টি স্টকের ডেলিভারি ও ভলিউম ডেটা নিখুঁতভাবে চেক করে নিচের সুইং সুযোগগুলো পাওয়া গেছে।")
+    st.success(f"Scan Successful! Processed delivery and volume matrices for {st.session_state.last_scanned_volume} assets across the index cluster.")
     
-    st.subheader(" Bars Found Actionable Structural Opportunities")
+    st.subheader("📊 Found Actionable Structural Opportunities")
     res_df = pd.DataFrame(st.session_state.scan_results)
     
     def style_alerts(val):
@@ -87,30 +86,68 @@ if st.session_state.scan_results:
         use_container_width=True
     )
     
-    # --- FIXED & TESTED DROP-DOWN DYNAMIC SECTION ---
+    # --- INTERACTIVE DEEP-DIVE TIMELINE AND CHARTS PANEL ---
     st.divider()
-    st.subheader("🔍 Deep-Dive Institutional Entry Timelines")
-    st.markdown("উপরের টেবিল থেকে যেকোনো একটি স্টক সিলেক্ট করুন। বড় প্লেয়াররা অতীতে যে যে তারিখে এই প্রাইস জোনে বড় ভলিউম নিয়ে এন্ট্রি করেছিল, তার হিস্ট্রি নিচে আলাদা কার্ডে দেখতে পাবেন:")
+    st.subheader("🔍 Technical Deep-Dive & Visual Workspace")
     
-    # Dropdown widget selector
     selected_ticker = st.selectbox(
-        "বিশ্লেষণ করার জন্য স্টকটি বেছে নিন (Dropdown):", 
+        "Select a Ticker from the found setups to generate live institutional charts:", 
         options=res_df["Ticker"].unique()
     )
     
+    # Render Timeline Blocks
     if selected_ticker in st.session_state.date_lookup:
         dates_list = st.session_state.date_lookup[selected_ticker]
-        
         if dates_list:
-            # Create horizontal column slots dynamically for each date block
+            st.markdown("**Historical Institutional Block Entry Timelines:**")
             cols = st.columns(len(dates_list))
             for i, dt in enumerate(dates_list):
                 with cols[i]:
                     st.metric(label=f"🧱 Block Entry {i+1}", value=dt, delta="FII/DII Active")
-        else:
-            st.info("No specific block records logged.")
+                    
+    # --- FETCH AND PLOT INTERACTIVE CANDLESTICK CHART ---
+    with st.spinner(f"Generating institutional chart for {selected_ticker}..."):
+        chart_df = fetch_indian_stock_data(selected_ticker, period="1y")
+        
+    if not chart_df.empty:
+        # Get specific target lines from table matching selected stock
+        stock_meta = res_df[res_df["Ticker"] == selected_ticker].iloc[0]
+        support_val = float(stock_meta["FII/DII Support Zone"].replace("₹", ""))
+        target_val = float(stock_meta["5-8 Day Target"])
+        sl_val = float(stock_meta["Stop Loss (SL)"])
+        
+        # Take last 90 trading sessions to keep the chart clean and highly visible
+        plot_df = chart_df.tail(90)
+        
+        fig = go.Figure()
+        
+        # Candlestick tracking
+        fig.add_trace(go.Candlestick(
+            x=plot_df['Date'], open=plot_df['Open'], high=plot_df['High'],
+            low=plot_df['Low'], close=plot_df['Close'], name="Price Action"
+        ))
+        
+        # Add Horizontal FII/DII Support Line
+        fig.add_hline(y=support_val, line_dash="dash", line_color="#065F46", line_width=2.5, 
+                      annotation_text=f"FII/DII Support Floor (₹{support_val:.2f})", annotation_position="top left")
+        
+        # Add Horizontal Target Line
+        fig.add_hline(y=target_val, line_dash="dot", line_color="#1E3A8A", line_width=2, 
+                      annotation_text=f"5-8 Day Profit Target (₹{target_val:.2f})", annotation_position="bottom right")
+        
+        # Add Horizontal Stop Loss Line
+        fig.add_hline(y=sl_val, line_dash="solid", line_color="#991B1B", line_width=2, 
+                      annotation_text=f"Risk Ceiling / SL Floor (₹{sl_val:.2f})", annotation_position="bottom left")
+        
+        fig.update_layout(
+            title=f"{selected_ticker} Institutional Retest Visual Map (Last 90 Sessions)",
+            xaxis_title="Trading Timeline", yaxis_title="Price (INR)",
+            xaxis_rangeslider_visible=False, height=550, template="plotly_dark"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 else:
     if run_scan:
-        st.warning(f"স্ক্যান সম্পূর্ণ। মোট {st.session_state.last_scanned_volume} টি স্টক চেক করা হয়েছে, কিন্তু আজকের বাজারে কোনো স্টকই আমাদের কঠোর ক্যাপিটাল প্রটেকশন ফিল্টার ম্যাচ করতে পারেনি।")
+        st.warning(f"Scan complete. Inspected {st.session_state.last_scanned_volume} tickers. No current assets match our strict capital defense thresholds today.")
     else:
-        st.info("বামদিকের সাইডবার থেকে আপনার পছন্দের ইনডেক্স সেগমেন্ট সিলেক্ট করে **'Execute Live Segment Scan'** বাটনে ক্লিক করুন।")
+        st.info("Please select a targeted index segment from the sidebar control panel and click **'Execute Live Segment Scan'** to launch the tracking array.")
