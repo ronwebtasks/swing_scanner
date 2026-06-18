@@ -17,6 +17,8 @@ if "active_portfolio" not in st.session_state:
     st.session_state.active_portfolio = {}
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = "Nifty 50 (Core Bluechip)"
+if "last_scanned_count" not in st.session_state:
+    st.session_state.last_scanned_count = 0
 
 segment = st.sidebar.selectbox(
     "Select Targeted Market Segment:", 
@@ -41,10 +43,15 @@ if run_scan:
             scan_res = scan_stock(df)
             if scan_res and scan_res != "NEUTRAL":
                 _, metrics = scan_res
+                
+                metrics["Raw_Highs"] = [float(df[df['Date'] == pd.to_datetime(d).date()]['High'].iloc) if not df[df['Date'] == pd.to_datetime(d).date()].empty else metrics["Floor"] for d in metrics["Raw_Dates"]]
+                metrics["Raw_Lows"] = [float(df[df['Date'] == pd.to_datetime(d).date()]['Low'].iloc) if not df[df['Date'] == pd.to_datetime(d).date()].empty else metrics["Floor"] for d in metrics["Raw_Dates"]]
+                
                 fresh_portfolio[sym] = metrics
                 
     progress_bar.empty()
     st.session_state.active_portfolio = fresh_portfolio
+    st.session_state.last_scanned_count = len(tickers)
 
 # --- LIVE REFRESH DATA DISPLAY CORE ---
 if st.session_state.active_portfolio:
@@ -74,6 +81,8 @@ if st.session_state.active_portfolio:
                 "Live Price": live_price,
                 "Execution State": current_alert,
                 "Optimal Buy Zone": f"₹{floor:.2f} - ₹{ceiling:.2f}",
+                # UPGRADED: Explicitly labels High and Low parameters directly in the string format
+                "FII/DII Buying Price": f"₹{stored_data['Block_Low']:.0f} (Low) - ₹{stored_data['Block_High']:.0f} (High)",
                 "Profit Target": float(stored_data["Target"]),
                 "Stop Loss (SL)": float(stored_data["SL"]),
                 "ATR Level": float(stored_data["ATR"])
@@ -81,11 +90,10 @@ if st.session_state.active_portfolio:
             
     res_df = pd.DataFrame(compiled_rows)
     
-    # HARD FIXED RATIO: 73% Main Table, 27% Deep Dive Panel to match heights perfectly
-    col_table, col_meta = st.columns([73, 27]) 
+    col_table, col_meta = st.columns() 
     
     with col_table:
-        st.subheader("📊 Dynamic Execution Pipeline")
+        st.subheader(f"📊 Dynamic Execution Pipeline (Inspected {st.session_state.last_scanned_count} Stocks)")
         
         def style_execution(val):
             if val == '🔥 ENTER_ZONE': return 'background-color: #065F46; color: white; font-weight: bold;'
@@ -97,7 +105,7 @@ if st.session_state.active_portfolio:
             res_df.style.map(style_execution, subset=['Execution State'])
                         .format({"Live Price": "₹{:.2f}", "Profit Target": "₹{:.2f}", "Stop Loss (SL)": "₹{:.2f}", "ATR Level": "{:.2f}"}),
             use_container_width=True,
-            height=440 # Locks the table height container to remain compact
+            height=440 
         )
         
     with col_meta:
@@ -105,18 +113,20 @@ if st.session_state.active_portfolio:
         selected_ticker = st.selectbox("Inspect Asset:", options=res_df["Ticker"].unique())
         
         if selected_ticker in st.session_state.active_portfolio:
-            blocks = st.session_state.active_portfolio[selected_ticker]["Blocks_Data"]
-            st.markdown("**FII/DII Entry History Matrix:**")
+            target_data = st.session_state.active_portfolio[selected_ticker]
+            dates = target_data["Raw_Dates"]
+            highs = target_data.get("Raw_Highs", [target_data["Floor"]]*4)
+            lows = target_data.get("Raw_Lows", [target_data["Floor"]]*4)
             
-            # NESTED HORIZONTAL LAYOUT: Packs blocks side-by-side to align perfectly with the table's height
+            st.markdown("**FII/DII Historical Limits [High / Low]:**")
             sub_cols = st.columns(3)
-            for i, block in enumerate(blocks[:3]):
+            for i, d_val in enumerate(dates[:3]):
                 with sub_cols[i]:
                     st.error(f"🧱 **B{i+1}**")
-                    st.caption(f"📅 {block['date']}")
-                    st.markdown(f"**₹{block['price']:.0f}**")
+                    st.caption(f"📅 {d_val}")
+                    st.markdown(f"**H:** ₹{highs[i]:.0f}\n\n**L:** ₹{lows[i]:.0f}")
 
-    # Candlestick plotting block
+    # --- CLEAN CHART RENDER PASSTHRU ---
     st.divider()
     chart_df = fetch_indian_stock_data(selected_ticker, period="1y")
     if not chart_df.empty:
@@ -130,7 +140,12 @@ if st.session_state.active_portfolio:
         fig.add_hline(y=target_meta["Target"], line_dash="dot", line_color="#1E3A8A", line_width=2, annotation_text="Target")
         fig.add_hline(y=target_meta["SL"], line_dash="solid", line_color="#991B1B", line_width=2, annotation_text="Hard SL")
         
-        fig.update_layout(title=f"{selected_ticker} Live Structural Workspace", template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
+        fig.update_layout(
+            title=f"{selected_ticker} Live Structural Workspace", 
+            template="plotly_dark", 
+            height=450, 
+            xaxis_rangeslider_visible=False
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     if live_stream_active:
