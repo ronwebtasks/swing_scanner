@@ -108,7 +108,6 @@ if st.session_state.active_portfolio:
             
     res_df = pd.DataFrame(compiled_rows)
     
-    # Allocating explicit side-by-side proportions (73% Table vs 27% Metadata)
     col_table, col_meta = st.columns([73, 27]) 
     
     with col_table:
@@ -140,14 +139,17 @@ if st.session_state.active_portfolio:
             
             st.markdown("**FII/DII Historical Limits [High / Low]:**")
             
-            # FIXED: Explicitly bound layout columns to match deep dive widths
-            sub_cols = st.columns(3)
+            # FIXED: Built a stable markdown table structure to bypass narrow column width limitations entirely
+            md_table = """
+
+| Block | Date | Low Price | High Price |
+| :--- | :--- | :--- | :--- |
+"""
             for i, d_val in enumerate(dates[:3]):
                 if i < len(highs) and i < len(lows):
-                    with sub_cols[i]:
-                        st.error(f"🧱 **B{i+1}**")
-                        st.caption(f"📅 {d_val}")
-                        st.markdown(f"**H:** ₹{highs[i]:.0f}\n\n**L:** ₹{lows[i]:.0f}")
+                    md_table += f"| 🧱 **B{i+1}** | {d_val} | ₹{lows[i]:.0f} | ₹{highs[i]:.0f} |\n"
+                    
+            st.markdown(md_table)
 
     # --- CLEAN CHART RENDER ---
     st.divider()
