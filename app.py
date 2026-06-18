@@ -56,7 +56,7 @@ if run_scan:
                         "Ticker": sym,
                         "Current Price": float(df.iloc[-1]['Close']),
                         "Scanner Alert": status,
-                        "FII/DII Entry Date": info["Footprint_Date"],
+                        "FII/DII Entry History (DD-MM-YYYY)": info["All_Entry_Dates"],
                         "FII/DII Support Zone": info["Footprint_Zone"],
                         "5-8 Day Target": float(info["Target"]),
                         "Stop Loss (SL)": float(info["SL"]),
@@ -72,9 +72,9 @@ if run_scan:
         # Color coding highlighter for different setup triggers
         def style_alerts(val):
             if val == 'STRONG_BUY_SIGNAL':
-                return 'background-color: #991B1B; color: white; font-weight: bold;' # Deep Red/Crimson for alert urgency
+                return 'background-color: #991B1B; color: white; font-weight: bold;'
             elif val == 'INSTITUTIONAL_RETEST':
-                return 'background-color: #065F46; color: white; font-weight: bold;' # Emerald Green
+                return 'background-color: #065F46; color: white; font-weight: bold;'
             return ''
             
         st.dataframe(
