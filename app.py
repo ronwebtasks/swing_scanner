@@ -108,7 +108,7 @@ if st.session_state.active_portfolio:
             
     res_df = pd.DataFrame(compiled_rows)
     
-    # FIXED: Explicitly defined column widths [73, 27] to prevent the layout engine TypeError
+    # Allocating explicit side-by-side proportions (73% Table vs 27% Metadata)
     col_table, col_meta = st.columns([73, 27]) 
     
     with col_table:
@@ -139,6 +139,8 @@ if st.session_state.active_portfolio:
             lows = target_data.get("Raw_Lows", [floor_fallback]*4)
             
             st.markdown("**FII/DII Historical Limits [High / Low]:**")
+            
+            # FIXED: Explicitly bound layout columns to match deep dive widths
             sub_cols = st.columns(3)
             for i, d_val in enumerate(dates[:3]):
                 if i < len(highs) and i < len(lows):
