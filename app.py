@@ -2,45 +2,36 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import time
 from symbols import NIFTY_50, NIFTY_NEXT_50, MIDCAP_150
 from data_engine import fetch_indian_stock_data
 from indicators import scan_stock
 
-st.set_page_config(page_title="Advanced NSE Capital Protected Scanner", layout="wide")
+st.set_page_config(page_title="NSE Live Tracker Engine", layout="wide")
 
-st.title("🇮🇳 Indian Market Segment Swing Scanner")
-st.caption("Strict Risk-Managed Scanning for Large & Mid Cap Assets")
+st.title("🇮🇳 Real-Time Institutional Swing Tracker")
+st.caption("Auto-Refreshing Order Blocks with Targeted Execution Zones")
 
-# --- Interactive Sidebar Controls ---
+# --- Control State Configuration ---
+if "active_portfolio" not in st.session_state:
+    st.session_state.active_portfolio = {}
+if "selected_index" not in st.session_state:
+    st.session_state.selected_index = "Nifty 50 (Core Bluechip)"
+
 segment = st.sidebar.selectbox(
     "Select Targeted Market Segment:", 
-    options=["Nifty 50 (Core Bluechip)", "Nifty Next 50 (High Momentum)", "Nifty Midcap 150", "Complete Combined Market Universe"]
+    options=["Nifty 50 (Core Bluechip)", "Nifty Next 50 (High Momentum)", "Nifty Midcap 150"],
+    key="selected_index"
 )
-run_scan = st.sidebar.button("Execute Live Segment Scan", type="primary")
+run_scan = st.sidebar.button("Execute Structural Scanning Core", type="primary")
 
-# Route tickers based on selection
-if segment == "Nifty 50 (Core Bluechip)":
-    tickers = NIFTY_50
-elif segment == "Nifty Next 50 (High Momentum)":
-    tickers = NIFTY_NEXT_50
-elif segment == "Nifty Midcap 150":
-    tickers = MIDCAP_150
-else:
-    tickers = NIFTY_50 + NIFTY_NEXT_50 + MIDCAP_150
-
-total_scanned_count = len(tickers)
-
-# Persist search across frames using streamlit session state cache
-if "scan_results" not in st.session_state:
-    st.session_state.scan_results = []
-if "date_lookup" not in st.session_state:
-    st.session_state.date_lookup = {}
-if "last_scanned_volume" not in st.session_state:
-    st.session_state.last_scanned_volume = 0
+# Route arrays
+if segment == "Nifty 50 (Core Bluechip)": tickers = NIFTY_50
+elif segment == "Nifty Next 50 (High Momentum)": tickers = NIFTY_NEXT_50
+else: tickers = MIDCAP_150
 
 if run_scan:
-    results = []
-    lookup = {}
+    fresh_portfolio = {}
     progress_bar = st.progress(0)
     
     for idx, sym in enumerate(tickers):
@@ -49,105 +40,100 @@ if run_scan:
         
         if not df.empty:
             scan_res = scan_stock(df)
-            if scan_res:
-                status, info = scan_res
-                if status != "NEUTRAL":
-                    results.append({
-                        "Ticker": sym,
-                        "Current Price": float(df.iloc[-1]['Close']),
-                        "Scanner Alert": status,
-                        "FII/DII Support Zone": info["Footprint_Zone"],
-                        "5-8 Day Target": float(info["Target"]),
-                        "Stop Loss (SL)": float(info["SL"]),
-                        "ATR Volatility": float(info["ATR"])
-                    })
-                    lookup[sym] = info["Raw_Dates"]
-                    
+            if scan_res and scan_res[0] != "NEUTRAL":
+                _, metrics = scan_res
+                fresh_portfolio[sym] = metrics
+                
     progress_bar.empty()
-    st.session_state.scan_results = results
-    st.session_state.date_lookup = lookup
-    st.session_state.last_scanned_volume = total_scanned_count
+    st.session_state.active_portfolio = fresh_portfolio
 
-# --- MAIN RENDER DISPLAY PANEL ---
-if st.session_state.scan_results:
-    st.success(f"Scan Successful! Processed delivery and volume matrices for {st.session_state.last_scanned_volume} assets across the index cluster.")
+# --- LIVE REFRESH DATA DISPLAY CORE ---
+if st.session_state.active_portfolio:
+    st.sidebar.divider()
+    st.sidebar.subheader("Streaming Control")
+    live_stream_active = st.sidebar.toggle("Enable Live 10s Auto-Update", value=True)
     
-    st.subheader("📊 Found Actionable Structural Opportunities")
-    res_df = pd.DataFrame(st.session_state.scan_results)
+    # Live execution matrix rendering pass
+    compiled_rows = []
+    for sym, stored_data in st.session_state.active_portfolio.items():
+        # Fetch fresh last row details silently for streaming update
+        live_df = fetch_indian_stock_data(sym, period="5d")
+        if not live_df.empty:
+            live_price = float(live_df.iloc[-1]['Close'])
+            floor = stored_data["Floor"]
+            ceiling = stored_data["Ceiling"]
+            
+            # Determine precise Execution State relative to limits
+            if live_price < stored_data["SL"]:
+                current_alert = "❌ INVALID_PASSED"
+            elif floor <= live_price <= ceiling:
+                current_alert = "🔥 ENTER_ZONE"
+            elif live_price > ceiling:
+                current_alert = "⏳ AWAIT_PULLBACK"
+            else:
+                current_alert = stored_data["Base_Status"]
+                
+            compiled_rows.append({
+                "Ticker": sym,
+                "Live Price": live_price,
+                "Execution State": current_alert,
+                "Optimal Buy Zone": f"₹{floor:.2f} - ₹{ceiling:.2f}",
+                "Profit Target": float(stored_data["Target"]),
+                "Stop Loss (SL)": float(stored_data["SL"]),
+                "ATR Level": float(stored_data["ATR"])
+            })
+            
+    res_df = pd.DataFrame(compiled_rows)
     
-    def style_alerts(val):
-        if val == 'STRONG_BUY_SIGNAL': return 'background-color: #991B1B; color: white; font-weight: bold;'
-        elif val == 'INSTITUTIONAL_RETEST': return 'background-color: #065F46; color: white; font-weight: bold;'
-        return ''
-        
-    st.dataframe(
-        res_df.style.map(style_alerts, subset=['Scanner Alert'])
-                    .format({"Current Price": "₹{:.2f}", "5-8 Day Target": "₹{:.2f}", "Stop Loss (SL)": "₹{:.2f}", "ATR Volatility": "{:.2f}"}),
-        use_container_width=True
-    )
+    # Layout rendering split
+    col_table, col_meta = st.columns([3, 1])
     
-    # --- INTERACTIVE DEEP-DIVE TIMELINE AND CHARTS PANEL ---
-    st.divider()
-    st.subheader("🔍 Technical Deep-Dive & Visual Workspace")
-    
-    selected_ticker = st.selectbox(
-        "Select a Ticker from the found setups to generate live institutional charts:", 
-        options=res_df["Ticker"].unique()
-    )
-    
-    # Render Timeline Blocks
-    if selected_ticker in st.session_state.date_lookup:
-        dates_list = st.session_state.date_lookup[selected_ticker]
-        if dates_list:
-            st.markdown("**Historical Institutional Block Entry Timelines:**")
-            cols = st.columns(len(dates_list))
-            for i, dt in enumerate(dates_list):
-                with cols[i]:
-                    st.metric(label=f"🧱 Block Entry {i+1}", value=dt, delta="FII/DII Active")
-                    
-    # --- FETCH AND PLOT INTERACTIVE CANDLESTICK CHART ---
-    with st.spinner(f"Generating institutional chart for {selected_ticker}..."):
-        chart_df = fetch_indian_stock_data(selected_ticker, period="1y")
+    with col_table:
+        st.subheader("实时 Dynamic Execution Pipeline")
         
-    if not chart_df.empty:
-        # Get specific target lines from table matching selected stock
-        stock_meta = res_df[res_df["Ticker"] == selected_ticker].iloc[0]
-        support_val = float(stock_meta["FII/DII Support Zone"].replace("₹", ""))
-        target_val = float(stock_meta["5-8 Day Target"])
-        sl_val = float(stock_meta["Stop Loss (SL)"])
-        
-        # Take last 90 trading sessions to keep the chart clean and highly visible
-        plot_df = chart_df.tail(90)
-        
-        fig = go.Figure()
-        
-        # Candlestick tracking
-        fig.add_trace(go.Candlestick(
-            x=plot_df['Date'], open=plot_df['Open'], high=plot_df['High'],
-            low=plot_df['Low'], close=plot_df['Close'], name="Price Action"
-        ))
-        
-        # Add Horizontal FII/DII Support Line
-        fig.add_hline(y=support_val, line_dash="dash", line_color="#065F46", line_width=2.5, 
-                      annotation_text=f"FII/DII Support Floor (₹{support_val:.2f})", annotation_position="top left")
-        
-        # Add Horizontal Target Line
-        fig.add_hline(y=target_val, line_dash="dot", line_color="#1E3A8A", line_width=2, 
-                      annotation_text=f"5-8 Day Profit Target (₹{target_val:.2f})", annotation_position="bottom right")
-        
-        # Add Horizontal Stop Loss Line
-        fig.add_hline(y=sl_val, line_dash="solid", line_color="#991B1B", line_width=2, 
-                      annotation_text=f"Risk Ceiling / SL Floor (₹{sl_val:.2f})", annotation_position="bottom left")
-        
-        fig.update_layout(
-            title=f"{selected_ticker} Institutional Retest Visual Map (Last 90 Sessions)",
-            xaxis_title="Trading Timeline", yaxis_title="Price (INR)",
-            xaxis_rangeslider_visible=False, height=550, template="plotly_dark"
+        def style_execution(val):
+            if val == '🔥 ENTER_ZONE': return 'background-color: #065F46; color: white; font-weight: bold;'
+            elif val == '⏳ AWAIT_PULLBACK': return 'background-color: #1E3A8A; color: white; font-weight: bold;'
+            elif val == '❌ INVALID_PASSED': return 'background-color: #991B1B; color: white; font-weight: bold;'
+            return ''
+            
+        st.dataframe(
+            res_df.style.map(style_execution, subset=['Execution State'])
+                        .format({"Live Price": "₹{:.2f}", "Profit Target": "₹{:.2f}", "Stop Loss (SL)": "₹{:.2f}", "ATR Level": "{:.2f}"}),
+            use_container_width=True
         )
         
+    with col_meta:
+        st.subheader("Asset Deep-Dive")
+        selected_ticker = st.selectbox("Inspect Asset:", options=res_df["Ticker"].unique())
+        
+        if selected_ticker in st.session_state.active_portfolio:
+            dates = st.session_state.active_portfolio[selected_ticker]["Raw_Dates"]
+            st.markdown("**Historical Entry Dates:**")
+            for i, d in enumerate(dates[:3]):
+                st.info(f"🧱 Block {i+1}: {d}")
+
+    # Candlestick plotting block
+    st.divider()
+    chart_df = fetch_indian_stock_data(selected_ticker, period="1y")
+    if not chart_df.empty:
+        target_meta = st.session_state.active_portfolio[selected_ticker]
+        plot_df = chart_df.tail(60)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(x=plot_df['Date'], open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Price"))
+        
+        # Overlay boundaries
+        fig.add_hline(y=target_meta["Floor"], line_dash="dash", line_color="#065F46", line_width=2, annotation_text="Buy Zone Base")
+        fig.add_hline(y=target_meta["Target"], line_dash="dot", line_color="#1E3A8A", line_width=2, annotation_text="Target")
+        fig.add_hline(y=target_meta["SL"], line_dash="solid", line_color="#991B1B", line_width=2, annotation_text="Hard SL")
+        
+        fig.update_layout(title=f"{selected_ticker} Live Structural Workspace", template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
+
+    # --- BACKGROUND REFRESH SYSTEM TIMER ---
+    if live_stream_active:
+        time.sleep(10)
+        st.rerun()
 else:
-    if run_scan:
-        st.warning(f"Scan complete. Inspected {st.session_state.last_scanned_volume} tickers. No current assets match our strict capital defense thresholds today.")
-    else:
-        st.info("Please select a targeted index segment from the sidebar control panel and click **'Execute Live Segment Scan'** to launch the tracking array.")
+    st.info("System initialized. Select a market segment from the sidebar and execute the scan to spin up the real-time tracking matrix.")
