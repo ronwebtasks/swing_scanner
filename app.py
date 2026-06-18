@@ -100,21 +100,31 @@ if st.session_state.active_portfolio:
             height=440 # Locks the table height container to remain compact
         )
         
-    with col_meta:
+        with col_meta:
         st.subheader("🎯 Asset Deep-Dive")
         selected_ticker = st.selectbox("Inspect Asset:", options=res_df["Ticker"].unique())
         
         if selected_ticker in st.session_state.active_portfolio:
-            blocks = st.session_state.active_portfolio[selected_ticker]["Blocks_Data"]
+            target_data = st.session_state.active_portfolio[selected_ticker]
+            dates = target_data.get("Raw_Dates", [])
+            floor_fallback = target_data.get("Floor", 0)
+            highs = target_data.get("Raw_Highs", [floor_fallback]*4)
+            lows = target_data.get("Raw_Lows", [floor_fallback]*4)
+            
             st.markdown("**FII/DII Entry History Matrix:**")
             
-            # NESTED HORIZONTAL LAYOUT: Packs blocks side-by-side to align perfectly with the table's height
+            # --- SWITCH FROM TABLE TO HORIZONTAL BADGE CARDS SYSTEM ---
             sub_cols = st.columns(3)
-            for i, block in enumerate(blocks[:3]):
-                with sub_cols[i]:
-                    st.error(f"🧱 **B{i+1}**")
-                    st.caption(f"📅 {block['date']}")
-                    st.markdown(f"**₹{block['price']:.0f}**")
+            for i, d_val in enumerate(dates[:3]):
+                if i < len(highs) and i < len(lows):
+                    with sub_cols[i]:
+                        st.error(f"🧱 **B{i+1}**")
+                        st.caption(f"📅 {d_val}")
+                        
+                        # Render structured metric containers featuring Low and High colored tags
+                        st.metric(label="Low Price Target", value=f"₹{lows[i]:.0f}", delta="LOW", delta_color="inverse")
+                        st.metric(label="High Price Target", value=f"₹{highs[i]:.0f}", delta="HIGH", delta_color="normal")
+
 
     # Candlestick plotting block
     st.divider()
