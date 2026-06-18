@@ -44,7 +44,6 @@ if run_scan:
             if scan_res and scan_res != "NEUTRAL":
                 _, metrics = scan_res
                 
-                # Extract and parse historical boundaries safely using string loops
                 extracted_highs = []
                 extracted_lows = []
                 dates_to_process = metrics.get("Raw_Dates", [])
@@ -101,7 +100,6 @@ if st.session_state.active_portfolio:
                 "Live Price": live_price,
                 "Execution State": current_alert,
                 "Optimal Buy Zone": f"₹{floor:.2f} - ₹{ceiling:.2f}",
-                # Strictly formats the precise required low/high identifier labels inside the row string
                 "FII/DII Buying Price": f"₹{block_low:.0f} (Low) - ₹{block_high:.0f} (High)",
                 "Profit Target": float(stored_data.get("Target", 0)),
                 "Stop Loss (SL)": float(sl_level),
@@ -110,7 +108,8 @@ if st.session_state.active_portfolio:
             
     res_df = pd.DataFrame(compiled_rows)
     
-    col_table, col_meta = st.columns() 
+    # FIXED: Explicitly defined column widths [73, 27] to prevent the layout engine TypeError
+    col_table, col_meta = st.columns([73, 27]) 
     
     with col_table:
         st.subheader(f"📊 Dynamic Execution Pipeline (Inspected {st.session_state.last_scanned_count} Stocks)")
