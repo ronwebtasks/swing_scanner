@@ -81,8 +81,8 @@ if st.session_state.active_portfolio:
             
     res_df = pd.DataFrame(compiled_rows)
     
-    # Layout rendering split
-    col_table, col_meta = st.columns([7, 3]) # Optimized width balance
+    # HARD FIXED RATIO: 73% Main Table, 27% Deep Dive Panel to match heights perfectly
+    col_table, col_meta = st.columns([73, 27]) 
     
     with col_table:
         st.subheader("📊 Dynamic Execution Pipeline")
@@ -96,7 +96,8 @@ if st.session_state.active_portfolio:
         st.dataframe(
             res_df.style.map(style_execution, subset=['Execution State'])
                         .format({"Live Price": "₹{:.2f}", "Profit Target": "₹{:.2f}", "Stop Loss (SL)": "₹{:.2f}", "ATR Level": "{:.2f}"}),
-            use_container_width=True
+            use_container_width=True,
+            height=440 # Locks the table height container to remain compact
         )
         
     with col_meta:
@@ -105,11 +106,15 @@ if st.session_state.active_portfolio:
         
         if selected_ticker in st.session_state.active_portfolio:
             blocks = st.session_state.active_portfolio[selected_ticker]["Blocks_Data"]
-            st.markdown("**Historical Entry Timelines & Purchase Price:**")
+            st.markdown("**FII/DII Entry History Matrix:**")
             
-            # Render descriptive vertical entry card clusters
+            # NESTED HORIZONTAL LAYOUT: Packs blocks side-by-side to align perfectly with the table's height
+            sub_cols = st.columns(3)
             for i, block in enumerate(blocks[:3]):
-                st.info(f"🧱 **Block {i+1} Entry**\n\nDate: **{block['date']}**\n\nEst. Buy Price: **₹{block['price']:.2f}**")
+                with sub_cols[i]:
+                    st.error(f"🧱 **B{i+1}**")
+                    st.caption(f"📅 {block['date']}")
+                    st.markdown(f"**₹{block['price']:.0f}**")
 
     # Candlestick plotting block
     st.divider()
