@@ -25,7 +25,6 @@ segment = st.sidebar.selectbox(
 )
 run_scan = st.sidebar.button("Execute Structural Scanning Core", type="primary")
 
-# Route arrays
 if segment == "Nifty 50 (Core Bluechip)": tickers = NIFTY_50
 elif segment == "Nifty Next 50 (High Momentum)": tickers = NIFTY_NEXT_50
 else: tickers = MIDCAP_150
@@ -40,7 +39,7 @@ if run_scan:
         
         if not df.empty:
             scan_res = scan_stock(df)
-            if scan_res and scan_res[0] != "NEUTRAL":
+            if scan_res and scan_res != "NEUTRAL":
                 _, metrics = scan_res
                 fresh_portfolio[sym] = metrics
                 
@@ -53,17 +52,14 @@ if st.session_state.active_portfolio:
     st.sidebar.subheader("Streaming Control")
     live_stream_active = st.sidebar.toggle("Enable Live 10s Auto-Update", value=True)
     
-    # Live execution matrix rendering pass
     compiled_rows = []
     for sym, stored_data in st.session_state.active_portfolio.items():
-        # Fetch fresh last row details silently for streaming update
         live_df = fetch_indian_stock_data(sym, period="5d")
         if not live_df.empty:
             live_price = float(live_df.iloc[-1]['Close'])
             floor = stored_data["Floor"]
             ceiling = stored_data["Ceiling"]
             
-            # Determine precise Execution State relative to limits
             if live_price < stored_data["SL"]:
                 current_alert = "❌ INVALID_PASSED"
             elif floor <= live_price <= ceiling:
@@ -86,10 +82,10 @@ if st.session_state.active_portfolio:
     res_df = pd.DataFrame(compiled_rows)
     
     # Layout rendering split
-    col_table, col_meta = st.columns([3, 1])
+    col_table, col_meta = st.columns([7, 3]) # Optimized width balance
     
     with col_table:
-        st.subheader("实时 Dynamic Execution Pipeline")
+        st.subheader("📊 Dynamic Execution Pipeline")
         
         def style_execution(val):
             if val == '🔥 ENTER_ZONE': return 'background-color: #065F46; color: white; font-weight: bold;'
@@ -104,14 +100,16 @@ if st.session_state.active_portfolio:
         )
         
     with col_meta:
-        st.subheader("Asset Deep-Dive")
+        st.subheader("🎯 Asset Deep-Dive")
         selected_ticker = st.selectbox("Inspect Asset:", options=res_df["Ticker"].unique())
         
         if selected_ticker in st.session_state.active_portfolio:
-            dates = st.session_state.active_portfolio[selected_ticker]["Raw_Dates"]
-            st.markdown("**Historical Entry Dates:**")
-            for i, d in enumerate(dates[:3]):
-                st.info(f"🧱 Block {i+1}: {d}")
+            blocks = st.session_state.active_portfolio[selected_ticker]["Blocks_Data"]
+            st.markdown("**Historical Entry Timelines & Purchase Price:**")
+            
+            # Render descriptive vertical entry card clusters
+            for i, block in enumerate(blocks[:3]):
+                st.info(f"🧱 **Block {i+1} Entry**\n\nDate: **{block['date']}**\n\nEst. Buy Price: **₹{block['price']:.2f}**")
 
     # Candlestick plotting block
     st.divider()
@@ -123,15 +121,13 @@ if st.session_state.active_portfolio:
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=plot_df['Date'], open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name="Price"))
         
-        # Overlay boundaries
-        fig.add_hline(y=target_meta["Floor"], line_dash="dash", line_color="#065F46", line_width=2, annotation_text="Buy Zone Base")
+        fig.add_hline(y=target_meta["Floor"], line_dash="dash", line_color="#065F46", line_width=2, annotation_text="Buy Zone Floor")
         fig.add_hline(y=target_meta["Target"], line_dash="dot", line_color="#1E3A8A", line_width=2, annotation_text="Target")
         fig.add_hline(y=target_meta["SL"], line_dash="solid", line_color="#991B1B", line_width=2, annotation_text="Hard SL")
         
         fig.update_layout(title=f"{selected_ticker} Live Structural Workspace", template="plotly_dark", height=450, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    # --- BACKGROUND REFRESH SYSTEM TIMER ---
     if live_stream_active:
         time.sleep(10)
         st.rerun()
