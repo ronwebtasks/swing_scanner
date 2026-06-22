@@ -190,7 +190,7 @@ if st.session_state.active_portfolio:
                 lowest_price = min(prices)
                 highest_price = max(prices)
 
-                card_html = "<div style='display:flex; flex-direction:column; gap:8px;'>"
+                card_parts = ["<div style='display:flex; flex-direction:column; gap:8px;'>"]
                 for i, block in enumerate(shown_blocks):
                     price = block['price']
                     date = block['date']
@@ -211,42 +211,32 @@ if st.session_state.active_portfolio:
                         badge_color = "#D1D5DB"
                         badge_text = f"B{i+1}"
 
-                    card_html += f"""
-                    <div style='
-                        border-left: 4px solid {border_color};
-                        background-color: #1F2937;
-                        border-radius: 8px;
-                        padding: 10px 14px;
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                    '>
-                        <div>
-                            <div style='color:#9CA3AF; font-size:12px; margin-bottom:2px;'>📅 {date}</div>
-                            <div style='color:#F9FAFB; font-size:17px; font-weight:600;'>₹{price:.2f}</div>
-                        </div>
-                        <div style='
-                            background-color:{badge_bg};
-                            color:{badge_color};
-                            font-size:11px;
-                            font-weight:700;
-                            padding:4px 10px;
-                            border-radius:12px;
-                            letter-spacing:0.5px;
-                        '>{badge_text}</div>
-                    </div>
-                    """
-                card_html += "</div>"
+                    card = (
+                        "<div style='border-left:4px solid " + border_color + "; "
+                        "background-color:#1F2937; border-radius:8px; padding:10px 14px; "
+                        "display:flex; justify-content:space-between; align-items:center;'>"
+                        "<div>"
+                        "<div style='color:#9CA3AF; font-size:12px; margin-bottom:2px;'>📅 " + date + "</div>"
+                        "<div style='color:#F9FAFB; font-size:17px; font-weight:600;'>₹" + f"{price:.2f}" + "</div>"
+                        "</div>"
+                        "<div style='background-color:" + badge_bg + "; color:" + badge_color + "; "
+                        "font-size:11px; font-weight:700; padding:4px 10px; border-radius:12px; "
+                        "letter-spacing:0.5px;'>" + badge_text + "</div>"
+                        "</div>"
+                    )
+                    card_parts.append(card)
+                card_parts.append("</div>")
+                card_html = "".join(card_parts)
                 st.markdown(card_html, unsafe_allow_html=True)
 
                 if lowest_price != highest_price:
-                    st.markdown(
-                        f"<div style='margin-top:10px; font-size:13px; color:#9CA3AF;'>"
-                        f"🟢 Best entry: <b style='color:#6EE7B7;'>₹{lowest_price:.2f}</b>"
-                        f" &nbsp;|&nbsp; 🟠 Worst entry: <b style='color:#FDBA74;'>₹{highest_price:.2f}</b>"
-                        f"</div>",
-                        unsafe_allow_html=True
+                    summary_html = (
+                        "<div style='margin-top:10px; font-size:13px; color:#9CA3AF;'>"
+                        "🟢 Best entry: <b style='color:#6EE7B7;'>₹" + f"{lowest_price:.2f}" + "</b>"
+                        " &nbsp;|&nbsp; 🟠 Worst entry: <b style='color:#FDBA74;'>₹" + f"{highest_price:.2f}" + "</b>"
+                        "</div>"
                     )
+                    st.markdown(summary_html, unsafe_allow_html=True)
             else:
                 st.caption("⚠️ No institutional footprint blocks detected for this asset in the lookback window.")
 
