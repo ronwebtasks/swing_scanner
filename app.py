@@ -115,9 +115,15 @@ if st.session_state.active_portfolio:
     st.sidebar.metric("Burst Candidates Found", len(burst_tickers))
 
     if burst_tickers:
-        with st.sidebar.expander(f"View {len(burst_tickers)} burst ticker(s)"):
+        with st.sidebar.expander(f"View {len(burst_tickers)} burst ticker(s)", expanded=True):
             for t in burst_tickers:
-                st.write(f"⚡ {t}")
+                data = st.session_state.active_portfolio[t]
+                st.markdown(f"**⚡ {t}**")
+                st.caption(
+                    f"Buy Zone: ₹{data['Floor']:.2f} - ₹{data['Ceiling']:.2f}  |  "
+                    f"Target: ₹{data['Target']:.2f}  |  SL: ₹{data['SL']:.2f}"
+                )
+                st.divider()
         show_burst_only = st.sidebar.checkbox("Show ONLY Momentum Burst setups in table", value=False)
     else:
         st.sidebar.caption("No Momentum Burst setups found in this scan. These are rare by design — they only fire on the exact day a volatility-squeeze breakout happens.")
@@ -207,7 +213,15 @@ if st.session_state.active_portfolio:
 
         with col_meta:
             st.subheader("🎯 Asset Deep-Dive")
-            selected_ticker = st.selectbox("Inspect Asset:", options=res_df["Ticker"].unique())
+
+            # ENTER_ZONE stocks float to the top of the dropdown, so they're
+            # selected by default instead of whatever was first in insertion order.
+            priority_df = res_df.copy()
+            priority_df['__priority'] = priority_df['Execution State'].apply(
+                lambda x: 0 if x == '🔥 ENTER_ZONE' else 1
+            )
+            sorted_tickers = priority_df.sort_values('__priority', kind='stable')['Ticker'].tolist()
+            selected_ticker = st.selectbox("Inspect Asset:", options=sorted_tickers)
 
             st.markdown("**FII/DII Entry History Matrix:**")
             blocks = []
