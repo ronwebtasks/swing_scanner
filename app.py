@@ -26,11 +26,16 @@ if "selected_index" not in st.session_state:
     st.session_state.selected_index = "Nifty 50 (Core Bluechip)"
 
 
+def now_ist() -> datetime:
+    """Returns current time in IST regardless of server's local timezone (Streamlit Cloud runs UTC)."""
+    if IST is not None:
+        return datetime.now(IST)
+    return datetime.utcnow()  # fallback, won't be IST but won't crash
+
+
 def is_market_open() -> bool:
     """Returns True if it's a weekday between 9:15 and 15:30 IST."""
-    if IST is None:
-        return True  # fallback: don't block refresh if zoneinfo unavailable
-    now = datetime.now(IST)
+    now = now_ist()
     if now.weekday() > 4:  # Sat=5, Sun=6
         return False
     market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
@@ -59,23 +64,29 @@ if run_scan:
 
     progress_bar = st.progress(0)
     total = max(len(all_data), 1)
+    skipped = []
     for idx, (sym, df) in enumerate(all_data.items()):
         progress_bar.progress((idx + 1) / total)
         if df is not None and not df.empty:
             try:
                 scan_res = scan_stock(df)
             except Exception as e:
-                st.sidebar.warning(f"Scan failed for {sym}: {e}")
+                skipped.append(f"{sym} (error: {e})")
                 continue
-            if scan_res and scan_res != "NEUTRAL":
+            if scan_res:
                 _, metrics = scan_res
                 fresh_portfolio[sym] = metrics
+        else:
+            skipped.append(f"{sym} (no data)")
 
     progress_bar.empty()
     st.session_state.active_portfolio = fresh_portfolio
 
     if not fresh_portfolio:
         st.warning("No qualifying setups found in this segment right now.")
+    if skipped:
+        with st.sidebar.expander(f"⚠️ {len(skipped)} skipped"):
+            st.write(skipped)
 
 # --- LIVE REFRESH DATA DISPLAY CORE ---
 if st.session_state.active_portfolio:
@@ -125,9 +136,8 @@ if st.session_state.active_portfolio:
     if res_df.empty:
         st.warning("Could not fetch live prices for any stock in the portfolio. Will retry on next refresh.")
     else:
-        st.caption(f"🕒 Last updated: {datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"🕒 Last updated (IST): {now_ist().strftime('%H:%M:%S')}")
 
-        # HARD FIXED RATIO: 73% Main Table, 27% Deep Dive Panel to match heights perfectly
         col_table, col_meta = st.columns([73, 27])
 
         with col_table:
@@ -159,6 +169,79 @@ if st.session_state.active_portfolio:
             st.subheader("🎯 Asset Deep-Dive")
             selected_ticker = st.selectbox("Inspect Asset:", options=res_df["Ticker"].unique())
 
+            st.markdown("**FII/DII Entry History Matrix:**")
+            blocks = []
             if selected_ticker in st.session_state.active_portfolio:
                 blocks = st.session_state.active_portfolio[selected_ticker].get("Blocks_Data", [])
-                st.markdown("**FII/DII Entry History Matrix:**")
+
+            if blocks:
+                num_show = min(4, len(blocks))
+                sub_cols = st.columns(num_show)
+                for i in range(num_show):
+                    block = blocks[i]
+                    with sub_cols[i]:
+                        st.error(f"🧱 **B{i+1}**")
+                        st.caption(f"📅 {block['date']}")
+                        st.markdown(f"**₹{block['price']:.0f}**")
+            else:
+                st.caption("⚠️ No institutional footprint blocks detected for this asset in the lookback window.")
+
+        # Candlestick plotting block with footprint markers
+        st.divider()
+        chart_df = fetch_indian_stock_data(selected_ticker, period="1y")
+        if not chart_df.empty and selected_ticker in st.session_state.active_portfolio:
+            target_meta = st.session_state.active_portfolio[selected_ticker]
+            blocks = target_meta.get("Blocks_Data", [])
+
+            # Make sure the chart window covers the oldest footprint block, not just last 60 bars
+            chart_df['Date'] = pd.to_datetime(chart_df['Date'])
+            window = 60
+            if blocks:
+                oldest_block_date = min(pd.to_datetime(b['date'], format='%d-%m-%Y') for b in blocks)
+                bars_since_oldest = (chart_df['Date'] >= oldest_block_date).sum()
+                window = max(window, bars_since_oldest + 10)
+
+            plot_df = chart_df.tail(window)
+
+            fig = go.Figure()
+            fig.add_trace(go.Candlestick(
+                x=plot_df['Date'], open=plot_df['Open'], high=plot_df['High'],
+                low=plot_df['Low'], close=plot_df['Close'], name="Price"
+            ))
+
+            fig.add_hline(y=target_meta["Floor"], line_dash="dash", line_color="#065F46", line_width=2, annotation_text="Buy Zone Floor")
+            fig.add_hline(y=target_meta["Target"], line_dash="dot", line_color="#1E3A8A", line_width=2, annotation_text="Target")
+            fig.add_hline(y=target_meta["SL"], line_dash="solid", line_color="#991B1B", line_width=2, annotation_text="Hard SL")
+
+            # Mark each historical footprint (FII/DII proxy) on the chart itself
+            if blocks:
+                block_dates = [pd.to_datetime(b['date'], format='%d-%m-%Y') for b in blocks]
+                block_prices = [b['price'] for b in blocks]
+                block_labels = [f"B{i+1}" for i in range(len(blocks))]
+
+                fig.add_trace(go.Scatter(
+                    x=block_dates, y=block_prices,
+                    mode="markers+text",
+                    marker=dict(symbol="triangle-up", size=14, color="#FBBF24", line=dict(width=1, color="black")),
+                    text=block_labels, textposition="top center",
+                    textfont=dict(color="#FBBF24", size=12),
+                    name="Footprint (Vol+Close proxy)",
+                    hovertext=[f"{lbl}: ₹{p:.2f} on {d.strftime('%d-%b-%Y')}" for lbl, p, d in zip(block_labels, block_prices, block_dates)],
+                    hoverinfo="text"
+                ))
+
+            fig.update_layout(
+                title=f"{selected_ticker} Live Structural Workspace",
+                template="plotly_dark", height=450, xaxis_rangeslider_visible=False
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Chart data unavailable for this asset right now.")
+
+    if live_stream_active and market_open:
+        time.sleep(10)
+        st.rerun()
+    elif live_stream_active and not market_open:
+        st.sidebar.caption("Auto-refresh paused (market closed).")
+else:
+    st.info("System initialized. Select a market segment from the sidebar and execute the scan to spin up the real-time tracking matrix.")
