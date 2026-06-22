@@ -19,24 +19,21 @@ st.set_page_config(page_title="NSE Live Tracker Engine", layout="wide")
 st.title("🇮🇳 Real-Time Institutional Swing Tracker")
 st.caption("Auto-Refreshing Order Blocks with Targeted Execution Zones")
 
-# --- Control State Configuration ---
 if "active_portfolio" not in st.session_state:
     st.session_state.active_portfolio = {}
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = "Nifty 50 (Core Bluechip)"
 
 
-def now_ist() -> datetime:
-    """Returns current time in IST regardless of server's local timezone (Streamlit Cloud runs UTC)."""
+def now_ist():
     if IST is not None:
         return datetime.now(IST)
     return datetime.utcnow()
 
 
-def is_market_open() -> bool:
-    """Returns True if it's a weekday between 9:15 and 15:30 IST."""
+def is_market_open():
     now = now_ist()
-    if now.weekday() > 4:  # Sat=5, Sun=6
+    if now.weekday() > 4:
         return False
     market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
     market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
@@ -58,9 +55,9 @@ sensitivity = st.sidebar.radio(
 )
 
 SENSITIVITY_PRESETS = {
-    "Strict":   {"vol_multiplier": 2.2, "close_loc_threshold": 0.70},
+    "Strict": {"vol_multiplier": 2.2, "close_loc_threshold": 0.70},
     "Balanced": {"vol_multiplier": 1.8, "close_loc_threshold": 0.62},
-    "Relaxed":  {"vol_multiplier": 1.5, "close_loc_threshold": 0.55},
+    "Relaxed": {"vol_multiplier": 1.5, "close_loc_threshold": 0.55},
 }
 scan_params = SENSITIVITY_PRESETS[sensitivity]
 
@@ -102,7 +99,6 @@ if run_scan:
         with st.sidebar.expander(f"⚠️ {len(skipped)} skipped"):
             st.write(skipped)
 
-# --- LIVE REFRESH DATA DISPLAY CORE ---
 if st.session_state.active_portfolio:
     st.sidebar.divider()
     st.sidebar.subheader("Streaming Control")
@@ -168,14 +164,13 @@ if st.session_state.active_portfolio:
                 return ''
 
             st.dataframe(
-                res_df.style.map(style_execution, subset=['Execution State'])
-                            .format({
-                                "Live Price": "₹{:.2f}",
-                                "Profit Target": "₹{:.2f}",
-                                "Stop Loss (SL)": "₹{:.2f}",
-                                "ATR Level": "{:.2f}",
-                                "Risk:Reward": "{:.2f}"
-                            }),
+                res_df.style.map(style_execution, subset=['Execution State']).format({
+                    "Live Price": "₹{:.2f}",
+                    "Profit Target": "₹{:.2f}",
+                    "Stop Loss (SL)": "₹{:.2f}",
+                    "ATR Level": "{:.2f}",
+                    "Risk:Reward": "{:.2f}"
+                }),
                 use_container_width=True,
                 height=440
             )
@@ -213,7 +208,6 @@ if st.session_state.active_portfolio:
             else:
                 st.caption("⚠️ No institutional footprint blocks detected for this asset in the lookback window.")
 
-        # Candlestick plotting block with footprint markers
         st.divider()
         chart_df = fetch_indian_stock_data(selected_ticker, period="1y")
         if not chart_df.empty and selected_ticker in st.session_state.active_portfolio:
@@ -231,8 +225,12 @@ if st.session_state.active_portfolio:
 
             fig = go.Figure()
             fig.add_trace(go.Candlestick(
-                x=plot_df['Date'], open=plot_df['Open'], high=plot_df['High'],
-                low=plot_df['Low'], close=plot_df['Close'], name="Price"
+                x=plot_df['Date'],
+                open=plot_df['Open'],
+                high=plot_df['High'],
+                low=plot_df['Low'],
+                close=plot_df['Close'],
+                name="Price"
             ))
 
             fig.add_hline(y=target_meta["Floor"], line_dash="dash", line_color="#065F46", line_width=2, annotation_text="Buy Zone Floor")
@@ -251,27 +249,55 @@ if st.session_state.active_portfolio:
                 marker_colors = []
                 for p in block_prices:
                     if p == lowest_price and lowest_price != highest_price:
-                        marker_colors.append("#22C55E")  # green = best/lowest buy
+                        marker_colors.append("#22C55E")
                     elif p == highest_price and lowest_price != highest_price:
-                        marker_colors.append("#F97316")  # orange = worst/highest buy
+                        marker_colors.append("#F97316")
                     else:
-                        marker_colors.append("#FBBF24")  # gold = mid
+                        marker_colors.append("#FBBF24")
 
                 hover_labels = []
                 for lbl, p, d in zip(block_labels, block_prices, block_dates):
                     tag = ""
                     if p == lowest_price and lowest_price != highest_price:
-                        tag = " (Lowest)"
+                        tag = " Lowest"
                     elif p == highest_price and lowest_price != highest_price:
-                        tag = " (Highest)"
-                    hover_labels.append(f"{lbl}{tag}: ₹{p:.2f} on {d.strftime('%d-%b-%Y')}")
+                        tag = " Highest"
+                    hover_labels.append(f"{lbl}{tag}: Rs {p:.2f} on {d.strftime('%d-%b-%Y')}")
 
-                fig.add_trace(go.Scatter(
-                    x=block_dates, y=block_prices,
-                    mode="markers+text",
-                    marker=dict(symbol="triangle-up", size=15, color=marker_colors, line=dict(width=1, color="black")),
-                    text=block_labels, textposition="top center",
-                    textfont=dict(color="#E5E7EB", size=12),
-                    name="Footprint (Vol+Close proxy)",
-                    hovertext=hover_labels,
-                    hoverinfo="text"
+                fig.add_trace(
+                    go.Scatter(
+                        x=block_dates,
+                        y=block_prices,
+                        mode="markers+text",
+                        marker=dict(
+                            symbol="triangle-up",
+                            size=15,
+                            color=marker_colors,
+                            line=dict(width=1, color="black")
+                        ),
+                        text=block_labels,
+                        textposition="top center",
+                        textfont=dict(color="#E5E7EB", size=12),
+                        name="Footprint proxy",
+                        hovertext=hover_labels,
+                        hoverinfo="text"
+                    )
+                )
+
+            fig.update_layout(
+                title=f"{selected_ticker} Live Structural Workspace",
+                template="plotly_dark",
+                height=450,
+                xaxis_rangeslider_visible=False
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Chart data unavailable for this asset right now.")
+
+    if live_stream_active and market_open:
+        time.sleep(10)
+        st.rerun()
+    elif live_stream_active and not market_open:
+        st.sidebar.caption("Auto-refresh paused (market closed).")
+else:
+    st.info("System initialized. Select a market segment from the sidebar and execute the scan to spin up the real-time tracking matrix.")
