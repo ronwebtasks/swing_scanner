@@ -190,21 +190,63 @@ if st.session_state.active_portfolio:
                 lowest_price = min(prices)
                 highest_price = max(prices)
 
-                num_show = len(shown_blocks)
-                sub_cols = st.columns(num_show)
+                card_html = "<div style='display:flex; flex-direction:column; gap:8px;'>"
                 for i, block in enumerate(shown_blocks):
-                    with sub_cols[i]:
-                        if block['price'] == lowest_price and lowest_price != highest_price:
-                            st.success(f"🧱 **B{i+1}** 📉 LOWEST")
-                        elif block['price'] == highest_price and lowest_price != highest_price:
-                            st.warning(f"🧱 **B{i+1}** 📈 HIGHEST")
-                        else:
-                            st.error(f"🧱 **B{i+1}**")
-                        st.caption(f"📅 {block['date']}")
-                        st.markdown(f"**₹{block['price']:.2f}**")
+                    price = block['price']
+                    date = block['date']
+
+                    if price == lowest_price and lowest_price != highest_price:
+                        border_color = "#22C55E"
+                        badge_bg = "#064E3B"
+                        badge_color = "#6EE7B7"
+                        badge_text = "LOWEST"
+                    elif price == highest_price and lowest_price != highest_price:
+                        border_color = "#F97316"
+                        badge_bg = "#7C2D12"
+                        badge_color = "#FDBA74"
+                        badge_text = "HIGHEST"
+                    else:
+                        border_color = "#6B7280"
+                        badge_bg = "#374151"
+                        badge_color = "#D1D5DB"
+                        badge_text = f"B{i+1}"
+
+                    card_html += f"""
+                    <div style='
+                        border-left: 4px solid {border_color};
+                        background-color: #1F2937;
+                        border-radius: 8px;
+                        padding: 10px 14px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    '>
+                        <div>
+                            <div style='color:#9CA3AF; font-size:12px; margin-bottom:2px;'>📅 {date}</div>
+                            <div style='color:#F9FAFB; font-size:17px; font-weight:600;'>₹{price:.2f}</div>
+                        </div>
+                        <div style='
+                            background-color:{badge_bg};
+                            color:{badge_color};
+                            font-size:11px;
+                            font-weight:700;
+                            padding:4px 10px;
+                            border-radius:12px;
+                            letter-spacing:0.5px;
+                        '>{badge_text}</div>
+                    </div>
+                    """
+                card_html += "</div>"
+                st.markdown(card_html, unsafe_allow_html=True)
 
                 if lowest_price != highest_price:
-                    st.caption(f"🟢 Best entry seen: ₹{lowest_price:.2f}  |  🟠 Worst entry seen: ₹{highest_price:.2f}")
+                    st.markdown(
+                        f"<div style='margin-top:10px; font-size:13px; color:#9CA3AF;'>"
+                        f"🟢 Best entry: <b style='color:#6EE7B7;'>₹{lowest_price:.2f}</b>"
+                        f" &nbsp;|&nbsp; 🟠 Worst entry: <b style='color:#FDBA74;'>₹{highest_price:.2f}</b>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
             else:
                 st.caption("⚠️ No institutional footprint blocks detected for this asset in the lookback window.")
 
