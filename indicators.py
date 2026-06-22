@@ -12,14 +12,7 @@ BREAKOUT_WINDOW = 10
 BREAKOUT_VOL_MULTIPLIER = 1.5
 
 
-def _detect_momentum_burst(df: pd.DataFrame) -> dict | None:
-    """
-    Looks for a volatility-contraction (squeeze) followed by a volume-backed
-    breakout -- a pattern more associated with FAST, short-horizon moves
-    (days, not weeks) than slow mean-reversion setups. Still NOT a guarantee
-    of any move in a fixed number of days -- just a higher-probability
-    short-term continuation pattern.
-    """
+def _detect_momentum_burst(df: pd.DataFrame):
     sma20 = df['Close'].rolling(20).mean()
     std20 = df['Close'].rolling(20).std()
     bb_upper = sma20 + 2 * std20
@@ -62,28 +55,18 @@ def _detect_momentum_burst(df: pd.DataFrame) -> dict | None:
         "Target": target,
         "SL": stop_loss,
         "Base_Status": "MOMENTUM_BURST_CANDIDATE",
-        "Setup_Type": "⚡ Momentum Burst (fast)"
+        "Setup_Type": "Momentum Burst (fast)"
     }
 
 
 def scan_stock(df: pd.DataFrame, vol_multiplier: float = 1.8, close_loc_threshold: float = 0.62):
     """
     Cap-protected swing engine. Checks for a momentum-burst (fast move) setup
-    FIRST since that's the short-horizon pattern; falls back to the
-    institutional-retest (slower, pullback-style) setup if no burst is found.
+    FIRST; falls back to the institutional-retest (slower, pullback-style)
+    setup if no burst is found.
 
     vol_multiplier / close_loc_threshold control how strict the footprint
-    (FII/DII proxy) detection is for the institutional-retest path:
-        Strict:   vol_multiplier=2.2, close_loc_threshold=0.70  (fewer, higher-conviction blocks)
-        Balanced: vol_multiplier=1.8, close_loc_threshold=0.62  (default)
-        Relaxed:  vol_multiplier=1.5, close_loc_threshold=0.55  (more blocks, lower conviction each)
-
-    NOTE: "footprints" here are a PRICE-ACTION PROXY (volume spike + strong
-    close), not actual disclosed FII/DII trade data.
-
-    Returns:
-        None if no qualifying setup is found.
-        (status, metrics) tuple otherwise.
+    (FII/DII proxy) detection is for the institutional-retest path.
     """
     if len(df) < MIN_BARS_REQUIRED:
         return None
@@ -101,12 +84,10 @@ def scan_stock(df: pd.DataFrame, vol_multiplier: float = 1.8, close_loc_threshol
     if latest[required_fields].isna().any():
         return None
 
-    # --- Check 1: Momentum Burst (fast, short-horizon) ---
     burst_metrics = _detect_momentum_burst(df)
     if burst_metrics:
         return "MOMENTUM_BURST_CANDIDATE", burst_metrics
 
-    # --- Check 2: Institutional Retest (slower, pullback-style) ---
     candle_range = (df['High'] - df['Low']).replace(0, 0.01)
     df['Close_Loc'] = (df['Close'] - df['Low']) / candle_range
     df['Footprint'] = (df['Volume'] > (vol_multiplier * df['Vol_MA50'])) & (df['Close_Loc'] > close_loc_threshold)
@@ -134,7 +115,7 @@ def scan_stock(df: pd.DataFrame, vol_multiplier: float = 1.8, close_loc_threshol
             "date": formatted_date,
             "price": round(float(calculated_cost), 2)
         })
-    historical_blocks.reverse()  # most recent block first
+    historical_blocks.reverse()
 
     last_footprint_row = recent_footprints.iloc[-1]
     zone_floor = float((last_footprint_row['High'] + last_footprint_row['Low']) / 2)
@@ -159,7 +140,7 @@ def scan_stock(df: pd.DataFrame, vol_multiplier: float = 1.8, close_loc_threshol
         "Target": round(current_close + (2.5 * atr), 2),
         "SL": stop_loss,
         "Base_Status": status,
-        "Setup_Type": "🐢 Institutional Retest (slower)"
+        "Setup_Type": "Institutional Retest (slower)"
     }
 
     return status, metrics
