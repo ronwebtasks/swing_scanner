@@ -50,6 +50,20 @@ segment = st.sidebar.selectbox(
 )
 run_scan = st.sidebar.button("Execute Structural Scanning Core", type="primary")
 
+sensitivity = st.sidebar.radio(
+    "Footprint Detection Sensitivity:",
+    options=["Strict", "Balanced", "Relaxed"],
+    index=1,
+    help="Strict = fewer, higher-conviction blocks. Relaxed = more blocks shown, lower conviction each."
+)
+
+SENSITIVITY_PRESETS = {
+    "Strict":   {"vol_multiplier": 2.2, "close_loc_threshold": 0.70},
+    "Balanced": {"vol_multiplier": 1.8, "close_loc_threshold": 0.62},
+    "Relaxed":  {"vol_multiplier": 1.5, "close_loc_threshold": 0.55},
+}
+scan_params = SENSITIVITY_PRESETS[sensitivity]
+
 if segment == "Nifty 50 (Core Bluechip)":
     tickers = NIFTY_50
 elif segment == "Nifty Next 50 (High Momentum)":
@@ -69,7 +83,7 @@ if run_scan:
         progress_bar.progress((idx + 1) / total)
         if df is not None and not df.empty:
             try:
-                scan_res = scan_stock(df)
+                scan_res = scan_stock(df, **scan_params)
             except Exception as e:
                 skipped.append(f"{sym} (error: {e})")
                 continue
@@ -261,20 +275,3 @@ if st.session_state.active_portfolio:
                     name="Footprint (Vol+Close proxy)",
                     hovertext=hover_labels,
                     hoverinfo="text"
-                ))
-
-            fig.update_layout(
-                title=f"{selected_ticker} Live Structural Workspace",
-                template="plotly_dark", height=450, xaxis_rangeslider_visible=False
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Chart data unavailable for this asset right now.")
-
-    if live_stream_active and market_open:
-        time.sleep(10)
-        st.rerun()
-    elif live_stream_active and not market_open:
-        st.sidebar.caption("Auto-refresh paused (market closed).")
-else:
-    st.info("System initialized. Select a market segment from the sidebar and execute the scan to spin up the real-time tracking matrix.")
