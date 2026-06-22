@@ -30,7 +30,7 @@ def now_ist() -> datetime:
     """Returns current time in IST regardless of server's local timezone (Streamlit Cloud runs UTC)."""
     if IST is not None:
         return datetime.now(IST)
-    return datetime.utcnow()  # fallback, won't be IST but won't crash
+    return datetime.utcnow()
 
 
 def is_market_open() -> bool:
@@ -122,6 +122,7 @@ if st.session_state.active_portfolio:
 
         compiled_rows.append({
             "Ticker": sym,
+            "Setup Type": stored_data.get("Setup_Type", "-"),
             "Live Price": live_price,
             "Execution State": current_alert,
             "Optimal Buy Zone": f"₹{floor:.2f} - ₹{ceiling:.2f}",
@@ -175,14 +176,26 @@ if st.session_state.active_portfolio:
                 blocks = st.session_state.active_portfolio[selected_ticker].get("Blocks_Data", [])
 
             if blocks:
-                num_show = min(4, len(blocks))
+                shown_blocks = blocks[:4]
+                prices = [b['price'] for b in shown_blocks]
+                lowest_price = min(prices)
+                highest_price = max(prices)
+
+                num_show = len(shown_blocks)
                 sub_cols = st.columns(num_show)
-                for i in range(num_show):
-                    block = blocks[i]
+                for i, block in enumerate(shown_blocks):
                     with sub_cols[i]:
-                        st.error(f"🧱 **B{i+1}**")
+                        if block['price'] == lowest_price and lowest_price != highest_price:
+                            st.success(f"🧱 **B{i+1}** 📉 LOWEST")
+                        elif block['price'] == highest_price and lowest_price != highest_price:
+                            st.warning(f"🧱 **B{i+1}** 📈 HIGHEST")
+                        else:
+                            st.error(f"🧱 **B{i+1}**")
                         st.caption(f"📅 {block['date']}")
-                        st.markdown(f"**₹{block['price']:.0f}**")
+                        st.markdown(f"**₹{block['price']:.2f}**")
+
+                if lowest_price != highest_price:
+                    st.caption(f"🟢 Best entry seen: ₹{lowest_price:.2f}  |  🟠 Worst entry seen: ₹{highest_price:.2f}")
             else:
                 st.caption("⚠️ No institutional footprint blocks detected for this asset in the lookback window.")
 
@@ -193,7 +206,6 @@ if st.session_state.active_portfolio:
             target_meta = st.session_state.active_portfolio[selected_ticker]
             blocks = target_meta.get("Blocks_Data", [])
 
-            # Make sure the chart window covers the oldest footprint block, not just last 60 bars
             chart_df['Date'] = pd.to_datetime(chart_df['Date'])
             window = 60
             if blocks:
@@ -213,20 +225,41 @@ if st.session_state.active_portfolio:
             fig.add_hline(y=target_meta["Target"], line_dash="dot", line_color="#1E3A8A", line_width=2, annotation_text="Target")
             fig.add_hline(y=target_meta["SL"], line_dash="solid", line_color="#991B1B", line_width=2, annotation_text="Hard SL")
 
-            # Mark each historical footprint (FII/DII proxy) on the chart itself
             if blocks:
-                block_dates = [pd.to_datetime(b['date'], format='%d-%m-%Y') for b in blocks]
-                block_prices = [b['price'] for b in blocks]
-                block_labels = [f"B{i+1}" for i in range(len(blocks))]
+                shown_blocks = blocks[:4]
+                block_dates = [pd.to_datetime(b['date'], format='%d-%m-%Y') for b in shown_blocks]
+                block_prices = [b['price'] for b in shown_blocks]
+                block_labels = [f"B{i+1}" for i in range(len(shown_blocks))]
+
+                lowest_price = min(block_prices)
+                highest_price = max(block_prices)
+
+                marker_colors = []
+                for p in block_prices:
+                    if p == lowest_price and lowest_price != highest_price:
+                        marker_colors.append("#22C55E")  # green = best/lowest buy
+                    elif p == highest_price and lowest_price != highest_price:
+                        marker_colors.append("#F97316")  # orange = worst/highest buy
+                    else:
+                        marker_colors.append("#FBBF24")  # gold = mid
+
+                hover_labels = []
+                for lbl, p, d in zip(block_labels, block_prices, block_dates):
+                    tag = ""
+                    if p == lowest_price and lowest_price != highest_price:
+                        tag = " (Lowest)"
+                    elif p == highest_price and lowest_price != highest_price:
+                        tag = " (Highest)"
+                    hover_labels.append(f"{lbl}{tag}: ₹{p:.2f} on {d.strftime('%d-%b-%Y')}")
 
                 fig.add_trace(go.Scatter(
                     x=block_dates, y=block_prices,
                     mode="markers+text",
-                    marker=dict(symbol="triangle-up", size=14, color="#FBBF24", line=dict(width=1, color="black")),
+                    marker=dict(symbol="triangle-up", size=15, color=marker_colors, line=dict(width=1, color="black")),
                     text=block_labels, textposition="top center",
-                    textfont=dict(color="#FBBF24", size=12),
+                    textfont=dict(color="#E5E7EB", size=12),
                     name="Footprint (Vol+Close proxy)",
-                    hovertext=[f"{lbl}: ₹{p:.2f} on {d.strftime('%d-%b-%Y')}" for lbl, p, d in zip(block_labels, block_prices, block_dates)],
+                    hovertext=hover_labels,
                     hoverinfo="text"
                 ))
 
