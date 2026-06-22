@@ -24,6 +24,9 @@ if "active_portfolio" not in st.session_state:
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = "Nifty 50 (Core Bluechip)"
 
+BURST_LABEL = "Momentum Burst (fast)"
+RETEST_LABEL = "Institutional Retest (slower)"
+
 
 def now_ist():
     if IST is not None:
@@ -99,6 +102,27 @@ if run_scan:
         with st.sidebar.expander(f"⚠️ {len(skipped)} skipped"):
             st.write(skipped)
 
+# --- MOMENTUM BURST SIDEBAR SECTION ---
+show_burst_only = False
+if st.session_state.active_portfolio:
+    burst_tickers = [
+        sym for sym, data in st.session_state.active_portfolio.items()
+        if data.get("Setup_Type") == BURST_LABEL
+    ]
+
+    st.sidebar.divider()
+    st.sidebar.subheader("⚡ Momentum Burst Scanner")
+    st.sidebar.metric("Burst Candidates Found", len(burst_tickers))
+
+    if burst_tickers:
+        with st.sidebar.expander(f"View {len(burst_tickers)} burst ticker(s)"):
+            for t in burst_tickers:
+                st.write(f"⚡ {t}")
+        show_burst_only = st.sidebar.checkbox("Show ONLY Momentum Burst setups in table", value=False)
+    else:
+        st.sidebar.caption("No Momentum Burst setups found in this scan. These are rare by design — they only fire on the exact day a volatility-squeeze breakout happens.")
+
+# --- LIVE REFRESH DATA DISPLAY CORE ---
 if st.session_state.active_portfolio:
     st.sidebar.divider()
     st.sidebar.subheader("Streaming Control")
@@ -110,6 +134,9 @@ if st.session_state.active_portfolio:
 
     compiled_rows = []
     for sym, stored_data in st.session_state.active_portfolio.items():
+        if show_burst_only and stored_data.get("Setup_Type") != BURST_LABEL:
+            continue
+
         live_price = fetch_live_price(sym)
         if live_price is None:
             continue
@@ -145,7 +172,10 @@ if st.session_state.active_portfolio:
     res_df = pd.DataFrame(compiled_rows)
 
     if res_df.empty:
-        st.warning("Could not fetch live prices for any stock in the portfolio. Will retry on next refresh.")
+        if show_burst_only:
+            st.warning("No Momentum Burst setups to show right now. Uncheck the sidebar filter to see all setups.")
+        else:
+            st.warning("Could not fetch live prices for any stock in the portfolio. Will retry on next refresh.")
     else:
         st.caption(f"🕒 Last updated (IST): {now_ist().strftime('%H:%M:%S')}")
 
